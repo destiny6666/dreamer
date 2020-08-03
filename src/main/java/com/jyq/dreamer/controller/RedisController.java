@@ -91,7 +91,7 @@ public class RedisController {
         //RETRY_LIMIT*sleep时间=最大并发量
         while (retry < RETRY_LIMIT) {
             try {
-                Boolean isLock = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, clientId, 30, TimeUnit.SECONDS);
+                Boolean isLock = stringRedisTemplate.opsForValue().setIfAbsent(lockKey, clientId, LOCK_KEY_EXPIRE, TimeUnit.SECONDS);
                 if (!isLock) {
                     System.out.println(clientId + "系统繁忙");
                     TimeUnit.SECONDS.sleep(1);

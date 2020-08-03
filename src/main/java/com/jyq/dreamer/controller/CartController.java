@@ -23,20 +23,40 @@ public class CartController {
     private StringRedisTemplate stringRedisTemplate;
     @Autowired
     private RedissonClient redisson;
-    @RequestMapping("/updateGoods")
-    public boolean updateGoods(Long userId,String goodsId,int num){
+
+    /**
+     * 更新购物车商品信息
+     * @param userId 用户id
+     * @param goodsId 商品id
+     * @param num 增加商品个数（减少为负数）
+     * @param isIncre 是否为增加/减少  true：递增/递减 false:修改
+     * @return
+     */
+    @RequestMapping("/updateCartGoods")
+    public boolean updateGoods(Long userId,String goodsId,int num,boolean isIncre){
         String lockKey = Joiner.on(":").useForNull("null").join("lockKey",userId,goodsId);
-        System.out.println("lockKey:"+lockKey);
+        log.info("lockKey:{}",lockKey);
         RLock lock=redisson.getLock(lockKey);
         try {
             lock.lock();
-            return updateGoodsTask(userId,goodsId,num);
+            return isIncre?increCartGoodsTask(userId,goodsId,num):updateCartGoodsTask(userId,goodsId,num);
         } finally {
             lock.unlock();
         }
     }
-    private boolean updateGoodsTask(Long userId,String goodsId,int num){
+
+    /**
+     * 递增/递减购物车
+     * @param userId
+     * @param goodsId
+     * @param num
+     * @return
+     */
+    private boolean increCartGoodsTask(Long userId,String goodsId,int num){
         try {
+            if(num==0){
+                return true;
+            }
             String userKey= Joiner.on(":").useForNull("null").join("cart",userId);
             //判断购物车是否有此商品
             boolean isExist=stringRedisTemplate.opsForHash().hasKey(userKey,goodsId);
@@ -52,17 +72,45 @@ public class CartController {
                 log.info("用户：{},商品：{},增加结果：{}",userId,goodsId,stringRedisTemplate.opsForHash().get(userKey,goodsId));
                 return true;
             }
-            //不存在 数量<=0 return
-            if(num<=0){
-                log.info("不存在，且<=0 直接返回");
+            //不存在+数量<0 return
+            if(num<0){
+                log.info("不存在，且<0 直接返回");
                 return true;
             }
-            //没有-hset
-            log.info("不存在，set");
+            //不存在+num>0-hset
+            log.info("不存在，put");
             stringRedisTemplate.opsForHash().put(userKey,goodsId,num+"");
             log.info("用户：{},商品：{},新增结果：{}",userId,goodsId,stringRedisTemplate.opsForHash().get(userKey,goodsId));
             return true;
         } catch (Exception e) {
+            log.error("递增递减购物车数据异常：{}",e);
+            e.printStackTrace();
+        }
+        return false;
+    }
+
+    /**
+     * 修改购物车
+     * @param userId
+     * @param goodsId
+     * @param num
+     * @return
+     */
+    private boolean updateCartGoodsTask(Long userId,String goodsId,int num){
+        String userKey= Joiner.on(":").useForNull("null").join("cart",userId);
+        try {
+            if(num<=0){
+                //删除
+                long res=stringRedisTemplate.opsForHash().delete(userKey,goodsId);
+                log.info("delete结果：{}",res);
+                return true;
+            }
+            log.info("num>0，put");
+            stringRedisTemplate.opsForHash().put(userKey,goodsId,num+"");
+            log.info("用户：{},商品：{},修改结果：{}",userId,goodsId,stringRedisTemplate.opsForHash().get(userKey,goodsId));
+            return true;
+        } catch (Exception e) {
+            log.error("修改购物车数据异常：{}",e);
             e.printStackTrace();
         }
         return false;
